@@ -11,7 +11,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-# 复用原有的辅助函数和基础模块
+
 def index_reverse(index):
     index_r = torch.zeros_like(index)
     ind = torch.arange(0, index.shape[-1]).to(index.device)
@@ -30,7 +30,6 @@ def semantic_neighbor(x, index):
 
 def window_partition(x, window_size):
     b, h, w, c = x.shape
-    # 兼容性处理：如果是 int，转成 (int, int)
     if isinstance(window_size, int):
         window_size = (window_size, window_size)
         
@@ -38,9 +37,7 @@ def window_partition(x, window_size):
     windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size[0], window_size[1], c)
     return windows
 
-# --- 修复后的 window_reverse (同时支持 int 和 tuple) ---
 def window_reverse(windows, window_size, h, w):
-    # 兼容性处理：如果是 int，转成 (int, int)
     if isinstance(window_size, int):
         window_size = (window_size, window_size)
         
@@ -49,14 +46,10 @@ def window_reverse(windows, window_size, h, w):
     x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(b, h, w, -1)
     return x
 
-# --------------------------------------------------------------------------------
-# 1. 频率解耦模块: Discrete Wavelet Transform (DWT) & IDWT
-# --------------------------------------------------------------------------------
-
 class DWT(nn.Module):
     def __init__(self):
         super().__init__()
-        self.requires_grad = False  # Haar小波是固定的，不需要训练
+        self.requires_grad = False  
 
     def forward(self, x):
         """
@@ -66,7 +59,6 @@ class DWT(nn.Module):
             HF: (B, 3C, H/2, W/2) - Stacked LH, HL, HH
         """
         b, c, h, w = x.shape
-         # 处理奇数分辨率的 padding
         pad_h = h % 2
         pad_w = w % 2
         if pad_h != 0 or pad_w != 0:
@@ -100,25 +92,9 @@ class IDWT(nn.Module):
             x: (B, C, H, W)
         """
         b, c, h, w = LL.shape
-        # Split HF back into HL, LH, HH
+
         HL, LH, HH = torch.chunk(HF, 3, dim=1)
-        
-        #x1 = LL - HL - LH + HH # (LL - HL - LH + HH)/2? No, based on DWT sum logic:
-        # Inverse logic derivation:
-        # LL = x1+x2+x3+x4
-        # HL = -x1-x2+x3+x4
-        # LH = -x1+x2-x3+x4
-        # HH = x1-x2-x3+x4
-        # (LL - HL - LH + HH) = (x1+x2+x3+x4) - (-x1-x2+x3+x4) - (-x1+x2-x3+x4) + (x1-x2-x3+x4)
-        # = 4*x1 => x1 = (...) / 4. But we divided by 2 in DWT, so here just recover directly if we match scale.
-        # Let's trust standard PyTorch Wavelet implementation logic logic or strictly reverse the math.
-        # x1 = (LL - HL - LH + HH) / 2
-        # x2 = (LL - HL + LH - HH) / 2
-        # x3 = (LL + HL - LH - HH) / 2
-        # x4 = (LL + HL + LH + HH) / 2
-        
-        # But wait, in DWT forward I did /2. So x_LL is average. 
-        # To strictly reconstruct:
+
         x1 = (LL - HL - LH + HH) 
         x2 = (LL - HL + LH - HH) 
         x3 = (LL + HL - LH - HH) 
@@ -129,10 +105,6 @@ class IDWT(nn.Module):
         y = torch.stack((y_top, y_bot), dim=-2).reshape(b, c, h*2, w*2)
         
         return y/2
-
-# --------------------------------------------------------------------------------
-# 2. 高频分支组件 (High Frequency Branch Components)
-# --------------------------------------------------------------------------------
 
 class SKFF(nn.Module):
     def __init__(self, in_channels, height=3, reduction=8,bias=False):
@@ -165,7 +137,6 @@ class SKFF(nn.Module):
         attention_vectors = [fc(feats_Z) for fc in self.fcs]
         attention_vectors = torch.cat(attention_vectors, dim=1)
         attention_vectors = attention_vectors.view(batch_size, self.height, n_feats, 1, 1)
-        # stx()
         attention_vectors = self.softmax(attention_vectors)
         
         feats_V = torch.sum(inp_feats*attention_vectors, dim=1)
@@ -199,21 +170,15 @@ class HFBranch(nn.Module):
     """
     def __init__(self, in_channels, res_scale=0.1):
         super().__init__()
-        # HF has 3 subbands (HL, LH, HH), so input channels are 3 * C
-        self.conv1 = nn.Conv2d(in_channels, in_channels, 3, 1, 1, groups=in_channels) # Depthwise
+        self.conv1 = nn.Conv2d(in_channels, in_channels, 3, 1, 1, groups=in_channels)
         self.act = nn.GELU()
-        self.conv2 = nn.Conv2d(in_channels, in_channels, 1, 1, 0) # Pointwise
+        self.conv2 = nn.Conv2d(in_channels, in_channels, 1, 1, 0) 
         self.se = SEBlock(in_channels,reduction=4)
         
-        #由于这个hf的energy过高，可能导致训练不稳定，所以加一个group norm//不要了哈，因为归一化会带来噪声
         #self.norm = nn.GroupNorm(4, num_channels=in_channels)
         self.res_scale = nn.Parameter(torch.ones(1, in_channels, 1, 1) * res_scale, requires_grad=True)
     def forward(self, x):
         shortcut = x
-
-        # 先进行 GroupNorm
-       # x = self.norm(x)
-
 
         x = self.conv1(x)
         x = self.act(x)
@@ -224,29 +189,17 @@ class HFBranch(nn.Module):
         return x * self.res_scale + shortcut
 
 
-
-# --------------------------------------------------------------------------------
-# 3. 跨频率交互模块 (Cross-Frequency Interaction)
-# --------------------------------------------------------------------------------
 class CFI(nn.Module):
     def __init__(self, ll_dim, hf_dim):
         super().__init__()
-        # 去掉 Sequential 中的 Sigmoid，手动控制
         self.struct_conv = nn.Conv2d(ll_dim, hf_dim, 1, 1, 0)
         self.sigmoid = nn.Sigmoid()
         self.fusion = nn.Conv2d(hf_dim * 2, hf_dim, 3, 1, 1)
         
     def forward(self, ll_feat, hf_feat):
-        # 1. 获取原始映射特征 (包含负值)
         ll_proj = self.struct_conv(ll_feat.contiguous())  # (B, hf_dim, H/2, W/2)
-        
-        # 2. 生成 Mask (0~1)
         mask = self.sigmoid(ll_proj)
-        
-        # 3. Gate HF
         hf_gated = hf_feat * mask
-        
-        # 4. 融合: 此时 ll_proj 包含丰富的结构特征信息
         hf_out = hf_gated + self.fusion(torch.cat([hf_feat, ll_proj], dim=1))
         
         return hf_out
@@ -255,7 +208,7 @@ class Gate(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.norm = nn.LayerNorm(dim)
-        self.conv = nn.Conv2d(dim, dim, kernel_size=5, stride=1, padding=2, groups=dim)  # DW Conv
+        self.conv = nn.Conv2d(dim, dim, kernel_size=5, stride=1, padding=2, groups=dim)  
 
     def forward(self, x, H, W):
         x1, x2 = x.chunk(2, dim=-1)
@@ -292,53 +245,7 @@ class GatedMLP(nn.Module):
         x = self.fc2(x)
         x = self.drop(x)
         return x
-# class CFI(nn.Module):
-#     """
-#     Structure-Guided Texture Injection.
-#     Uses LL features to gate/guide HF features.
-#     """
-#     def __init__(self, ll_dim, hf_dim):
-#         super().__init__()
-#         self.struct_gate = nn.Sequential(
-#             nn.Conv2d(ll_dim, hf_dim, 1, 1, 0),
-#             nn.Sigmoid()
-#         )
-#         self.fusion = nn.Conv2d(hf_dim * 2, hf_dim, 3, 1, 1)
-        
-#     def forward(self, ll_feat, hf_feat):
-#         # ll_feat: (B, C, H/2, W/2)
-#         # hf_feat: (B, 3C, H/2, W/2)
-        
-#         # 1. Generate Structure Mask from LL
-#         mask = self.struct_gate(ll_feat) # (B, 3C, H/2, W/2)
-        
-#         # 2. Gate HF features (suppress noise in flat areas)
-#         hf_gated = hf_feat * mask
-        
-#         # 3. Concatenate and fuse (Allow structure to inject into texture)
-#         # We define structure injection as LL feature mapped to HF domain
-#         # But simply concatenating raw LL might be dimension mismatch, 
-#         # so we expand LL to match HF dims first for concatenation?
-#         # Actually, let's concat [HF_gated, Masked_LL_Info]
-#         # But to save params, let's just fuse
-        
-#         # Simplified interaction:
-#         # Inject LL info into HF.
-#         # Since LL is C and HF is 3C, we tile LL or project it.
-#         # The mask generation already projected LL to 3C. Let's use that projection as "Structure Info".
-#         # But `mask` is sigmoid activated (0-1). We might want the raw features.
-        
-#         # Let's redesign slightly for robustness:
-#         ll_proj = self.struct_gate(ll_feat) # Raw projected features
-#         mask = self.struct_gate[1](ll_proj)    # Sigmoid mask
-        
-#         hf_out = hf_feat * mask + self.fusion(torch.cat([hf_feat, ll_proj], dim=1))
-        
-#         return hf_out
 
-# --------------------------------------------------------------------------------
-# 4. MambaIRv2 基础组件复用 (Reused Mamba Components)
-# --------------------------------------------------------------------------------
 
 class Selective_Scan(nn.Module):
     def __init__(self, d_model, d_state=16, expand=2., dt_rank="auto", dt_min=0.001, dt_max=0.1, dt_init="random", dt_scale=1.0, dt_init_floor=1e-4, device=None, dtype=None, **kwargs):
@@ -445,7 +352,6 @@ class ASSM(nn.Module):
 
 
         self.CPE = nn.Sequential(nn.Conv2d(hidden, hidden, 3, 1, 1, groups=hidden))
-        #self.cpe_hf_proj = nn.Conv2d(self.dim, hidden, 1, 1, 0)
         self.hf_dim=dim//4
         self.hf_dim=max(self.hf_dim & (~3), 12) # 保持hf_dim是4的倍数，且不小于12
         self.cpe_hf_proj = nn.Conv2d(self.hf_dim, hidden, 1, 1, 0)
@@ -569,10 +475,6 @@ class WindowAttention(nn.Module):
         x = self.proj(x)
         return x
 
-# --------------------------------------------------------------------------------
-# 5. 低频分支 Block (LL Branch Block) - MambaIRv2 标准模块
-# --------------------------------------------------------------------------------
-
 class AttentiveLayer(nn.Module):
     """
     Standard MambaIRv2 Layer. Used for LL branch.
@@ -604,7 +506,6 @@ class AttentiveLayer(nn.Module):
         h, w = x_size
         b, n, c = x.shape
         c3 = 3 * c
-        # part1: Window-MHSA
         shortcut = x
         x = self.norm1(x)
         qkv = self.wqkv(x)
@@ -627,16 +528,12 @@ class AttentiveLayer(nn.Module):
         x_win = attn_x.view(b, n, c) + shortcut
         x_win = self.convffn1(self.norm2(x_win), x_size) + x_win
         x = shortcut * self.scale1 + x_win
-        # part2: Attentive State Space
+
         shortcut = x
         x_aca = self.assm(self.norm3(x), x_size, self.embeddingA, x_hf=x_hf) + x
         x = x_aca + self.convffn2(self.norm4(x_aca), x_size)
         x = shortcut * self.scale2 + x
         return x
-
-# --------------------------------------------------------------------------------
-# 6. 核心 Wavelet-ASSM (W-ASSM) Block
-# --------------------------------------------------------------------------------
 
 class WaveletASSB(nn.Module):
     """
@@ -653,10 +550,9 @@ class WaveletASSB(nn.Module):
         self.idwt = IDWT()
         
         # 2. LL Branch: AttentiveLayer (Mamba + Window Attn)
-        # Note: Input resolution for LL branch is H/2, W/2
         ll_resolution = (input_resolution[0] // 2, input_resolution[1] // 2)
         self.ll_branch = AttentiveLayer(
-            dim=dim, # LL channel is C (averaged), kept same as input dim
+            dim=dim, 
             d_state=d_state,
             input_resolution=ll_resolution,
             num_heads=num_heads,
@@ -673,25 +569,18 @@ class WaveletASSB(nn.Module):
 
         self.skff=SKFF(in_channels=dim, height=3, reduction=8)
 
-         #将高频分支砍一刀，他吃的有点好了，居然抢了mamba的活，所以先把它的channel数砍一刀，看看能不能让mamba吃的更好哈
+        
         self.hf_dim = dim//4
-        self.hf_dim=max(self.hf_dim & (~3), 12) # 保持hf_dim是4的倍数，且不小于12
+        self.hf_dim=max(self.hf_dim & (~3), 12)
         self.hf_compress = nn.Conv2d(dim, self.hf_dim, 1, 1, 0)
 
         # 3. HF Branch: DP-CNN
-        # HF channel is 3*C
-        #self.hf_branch = HFBranch(in_channels=dim, res_scale=0.1)
         self.hf_branch = HFBranch(in_channels=self.hf_dim, res_scale=0.1)
         
         # 4. Interaction: CFI
-        #self.cfi = CFI(ll_dim=dim, hf_dim=dim)
         self.cfi=CFI(ll_dim=dim, hf_dim=self.hf_dim)
         
-        #self.expand_conv = nn.Conv2d(dim, 3*dim, 1, 1, 0)
         self.expand_conv = nn.Conv2d(self.hf_dim, 3*dim, 1, 1, 0)
-
-        # Initialize weights and biases测试一下是否有用！后面发现，这个卷积层初始化之后，会导致低频分支学习到了全频特征，所以先不初始化了哈
-        # nn.init.normal_(self.expand_conv.weight, mean=0, std= 1e-4)
         nn.init.constant_(self.expand_conv.bias, 0)
 
     def forward(self, x, x_size, params_ll,return_freq=False):
@@ -702,55 +591,33 @@ class WaveletASSB(nn.Module):
         """
         H, W = x_size
         B, N, C = x.shape
-        
-        # Reshape for DWT
         x_img = x.transpose(1, 2).view(B, C, H, W)
         
-        # 1. DWT Split
-        x_ll, x_hf = self.dwt(x_img) # LL: (B, C, H/2, W/2), HF: (B, 3C, H/2, W/2)
+        x_ll, x_hf = self.dwt(x_img) 
         
-        #--------------------------------------------------------------------
-        hf_subbands=torch.chunk(x_hf, 3, dim=1) # (HL, LH, HH) each (B, C, H/2, W/2)
-        x_hf_fused=self.skff(hf_subbands) # (B, 3C, H/2, W/2)
+        hf_subbands=torch.chunk(x_hf, 3, dim=1) 
+        x_hf_fused=self.skff(hf_subbands) 
 
-         #砍一刀
-        x_hf_fused = self.hf_compress(x_hf_fused.contiguous()) # (B, hf_dim, H/2, W/2)
-        # HF Processing (CNN)
-        x_hf_out = self.hf_branch(x_hf_fused) # (B, 3C, H/2, W/2 )
+        x_hf_fused = self.hf_compress(x_hf_fused.contiguous())
+        x_hf_out = self.hf_branch(x_hf_fused) 
 
-
-        #-----------------------------------------------------------------
-        # 2. Branches
-        # LL Processing (Mamba + Attn)
-        # Flatten LL for AttentiveLayer
-        x_ll_flat = x_ll.flatten(2).transpose(1, 2) # (B, N/4, C)
+        x_ll_flat = x_ll.flatten(2).transpose(1, 2) 
         ll_size = (H // 2, W // 2)
         x_ll_out_flat = self.ll_branch(x_ll_flat, ll_size, params_ll,x_hf_out)
         x_ll_out = x_ll_out_flat.transpose(1, 2).contiguous().view(B, C, H//2, W//2)
-        
-        #--------------------------------------------------------------------
-        # 3. Interaction (CFI)
+
         x_hf_refined = self.cfi(x_ll_out, x_hf_out)
         
-        x_final=self.expand_conv(x_hf_refined) # (B, 3C, H/2, W/2)
-        # 4. Merge (IDWT)
-        x_rec = self.idwt(x_ll_out, x_final) # (B, C, H, W)
+        x_final=self.expand_conv(x_hf_refined) 
+        x_rec = self.idwt(x_ll_out, x_final) 
         
-        # Residual connection (Global residual usually handled in outer block, but let's add local here if dimensions match input)
-        # Input x_img, Output x_rec. 
-        # Standard ResBlock practice: Output + Input
         x_out = x_rec # + x_img
         
-        # Flatten back
         x_out_flat = x_out.flatten(2).transpose(1, 2)
 
         if return_freq:
             return x_out_flat, x_ll_out, x_final
         return x_out_flat
-
-# --------------------------------------------------------------------------------
-# 7. WaveMambaIR 主模型 (Main Model)
-# --------------------------------------------------------------------------------
 
 class WaveMambaIRBlockGroup(nn.Module):
     """
@@ -889,7 +756,7 @@ class UpsampleOneStep(nn.Sequential):
         super(UpsampleOneStep, self).__init__(*m)
 
 # @ARCH_REGISTRY.register()
-class WaveMambaIR(nn.Module):
+class WaveMambaSR(nn.Module):
     def __init__(self,
                  img_size=64,
                  patch_size=1,
@@ -960,11 +827,6 @@ class WaveMambaIR(nn.Module):
             self.absolute_pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim))
             trunc_normal_(self.absolute_pos_embed, std=.02)
 
-        # Relative Position Index for LL Branch (Half Resolution)
-        # Note: The LL branch works on H/2, W/2. 
-        # But WindowAttention inside LL branch uses 'window_size'.
-        # We need to compute RPI for the window size. RPI depends on window_size, not feature map size.
-        # So we can reuse one RPI calculation.
         self.register_buffer('relative_position_index_SA', self.calculate_rpi_sa())
 
         self.layers = nn.ModuleList()
@@ -1037,8 +899,6 @@ class WaveMambaIR(nn.Module):
         return relative_position_index
 
     def calculate_mask(self, x_size):
-        # We need masks for the LL branch, which operates at (H/2, W/2)
-        # BUT, the window size is constant.
         h, w = x_size
         img_mask = torch.zeros((1, h, w, 1))
         h_slices = (slice(0, -self.window_size), slice(-self.window_size, -(self.window_size // 2)), slice(-(self.window_size // 2), None))
@@ -1067,8 +927,6 @@ class WaveMambaIR(nn.Module):
         self.mean = self.mean.type_as(x)
         x = (x - self.mean) * self.img_range
 
-        # Calculate mask for LL branch (H/2, W/2)
-        # The LL branch uses Window Attention, so it needs a mask based on its feature map size
         ll_size = (h // 2, w // 2)
         attn_mask_ll = self.calculate_mask(ll_size).to(x.device)
         params_ll = {'attn_mask': attn_mask_ll, 'rpi_sa': self.relative_position_index_SA}
@@ -1083,8 +941,6 @@ class WaveMambaIR(nn.Module):
 
         x_ll, x_hf = None, None
         for i, layer in enumerate(self.layers):
-            # We pass x_res (B, N, C) and current full resolution size (H, W)
-            # The layer internally splits to H/2, W/2 and uses params_ll
             if return_freq and i==len(self.layers)-1:
                 x_res, x_ll, x_hf = layer(x_res, (h, w), params_ll,return_freq=True)
             else:
@@ -1116,14 +972,13 @@ class WaveMambaIR(nn.Module):
         return x
 
 if __name__ == '__main__':
-    # Test Code
     upscale = 4
-    model = WaveMambaIR(
+    model = WaveMambaSR(
         upscale=2,
         img_size=64,
         embed_dim=48,
         d_state=8,
-        depths=[4, 4, 4, 4], # Reduced depth for quick test
+        depths=[4, 4, 4, 4], 
         num_heads=[4, 4, 4, 4],
         window_size=16,
         inner_rank=32,
@@ -1132,17 +987,13 @@ if __name__ == '__main__':
         img_range=1.,
         mlp_ratio=1.,
         upsampler='pixelshuffledirect').cuda()
-
-    # Model Size
     total = sum([param.nelement() for param in model.parameters()])
     print("Number of parameter: %.3fM" % (total / 1e6))
     
-    # Forward Pass Check
     _input = torch.randn(1, 3, 64, 64).cuda()
     output = model(_input).cuda()
     print("Output Shape:", output.shape)
     
-    # Check DWT logic correctness
     print("\n--- DWT Check ---")
     dwt = DWT().cuda()
     ll, hf = dwt(_input)

@@ -30,9 +30,9 @@ def select_model(args, device):
         stat_dict = torch.load(model_path)
         model.load_state_dict(stat_dict, strict=False)
     elif model_id == 1:
-        from models.team01_WaveMambaIR import WaveMambaIR
-        name, data_range = f"{model_id:02}_WaveMambaIR", 1.0
-        model = WaveMambaIR(
+        from models.team12_WaveMambaSR import WaveMambaSR
+        name, data_range = f"{model_id:02}_WaveMambaSR", 1.0
+        model = WaveMambaSR(
         upscale=4,
         in_chans=3,
         img_range=1.0,
@@ -48,7 +48,7 @@ def select_model(args, device):
         mlp_ratio=2.0,
         upsampler='pixelshuffledirect',
         resi_connection='1conv' ).eval().to(device)
-        model_path = os.path.join('model_zoo', f'net_g_240000.pth')
+        model_path = os.path.join('model_zoo', f'team12_WaveMambaSR.pth')
         stat_dict = torch.load(model_path)
         # 提取真正的模型权重
         if 'params' in stat_dict:

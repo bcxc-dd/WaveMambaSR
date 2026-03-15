@@ -1,6 +1,6 @@
 # --- Evaluation on LSDIR_DIV2K_valid datasets for One Method: ---
 CUDA_VISIBLE_DEVICES=0 python test_demo.py \
-    --data_dir /home/xxy/下载 \
+    --data_dir ../ \
     --save_dir ./results \
     --model_id 1
 
