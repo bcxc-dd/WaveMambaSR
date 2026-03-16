@@ -53,7 +53,7 @@ To run the evaluation, execute the following command. Make sure to replace `/pat
 CUDA_VISIBLE_DEVICES=0 python test_demo.py \
     --data_dir /path/to/your/dataset \
     --save_dir ./results \
-    --model_id 1
+    --model_id 12
 ```
 
 
