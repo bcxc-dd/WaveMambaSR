@@ -29,7 +29,7 @@ def select_model(args, device):
         model_path = os.path.join('model_zoo', f'team00_SPAN.pth')
         stat_dict = torch.load(model_path)
         model.load_state_dict(stat_dict, strict=False)
-    elif model_id == 1:
+    elif model_id == 12:
         from models.team12_WaveMambaSR import WaveMambaSR
         name, data_range = f"{model_id:02}_WaveMambaSR", 1.0
         model = WaveMambaSR(
