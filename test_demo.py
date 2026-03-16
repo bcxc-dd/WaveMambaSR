@@ -30,30 +30,30 @@ def select_model(args, device):
         stat_dict = torch.load(model_path)
         model.load_state_dict(stat_dict, strict=False)
     elif model_id == 12:
-        from models.team12_WaveMambaSR import WaveMambaSR
-        name, data_range = f"{model_id:02}_WaveMambaSR", 1.0
-        model = WaveMambaSR(
+        from models.team12_DWMamba import DWMamba
+        name, data_range = f"{model_id:02}_DWMamba", 1.0
+        model = DWMamba(
         upscale=4,
         in_chans=3,
         img_range=1.0,
         img_size=64,
-        embed_dim=48,       # 维度压榨
+        embed_dim=48,       
         d_state=8,
         depths=[2, 2, 2, 2],
         num_heads=[4,4,4,4], 
         window_size=16, 
         inner_rank=32,
-        num_tokens=64,  # 减少一个 Stage 以换取极限 Runtime
+        num_tokens=64,  
         convffn_kernel_size=5,
         mlp_ratio=2.0,
         upsampler='pixelshuffledirect',
         resi_connection='1conv' ).eval().to(device)
-        model_path = os.path.join('model_zoo', f'team12_WaveMambaSR.pth')
+        model_path = os.path.join('model_zoo', f'team12_DWMamba.pth')
         stat_dict = torch.load(model_path)
         # 提取真正的模型权重
         if 'params' in stat_dict:
             weight_dict = stat_dict['params']
-        elif 'params_ema' in stat_dict: # 有时候官方预训练库会存成 params_ema
+        elif 'params_ema' in stat_dict: 
             weight_dict = stat_dict['params_ema']
         else:
             weight_dict = stat_dict

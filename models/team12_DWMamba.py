@@ -756,7 +756,7 @@ class UpsampleOneStep(nn.Sequential):
         super(UpsampleOneStep, self).__init__(*m)
 
 # @ARCH_REGISTRY.register()
-class WaveMambaSR(nn.Module):
+class DWMamba(nn.Module):
     def __init__(self,
                  img_size=64,
                  patch_size=1,
@@ -973,7 +973,7 @@ class WaveMambaSR(nn.Module):
 
 if __name__ == '__main__':
     upscale = 4
-    model = WaveMambaSR(
+    model = DWMamba(
         upscale=2,
         img_size=64,
         embed_dim=48,

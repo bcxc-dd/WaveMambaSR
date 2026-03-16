@@ -2,7 +2,7 @@ import os
 import torch
 from fvcore.nn import FlopCountAnalysis
 from utils.model_summary import get_model_activation
-from models.team12_WaveMambaSR import WaveMambaSR
+from models.team12_DWMamba import DWMamba
 
 def main():
     
@@ -12,8 +12,8 @@ def main():
     print(f"[*] Testing Device: {device}")
 
     
-    print("[*] Initializing WaveMambaSR...")
-    model = WaveMambaSR(
+    print("[*] Initializing DWMamba...")
+    model = DWMamba(
         upscale=4,
         in_chans=3,
         img_range=1.0,
@@ -31,7 +31,7 @@ def main():
         resi_connection='1conv' 
     ).eval().to(device)
 
-    model_path = os.path.join('model_zoo', 'team12_WaveMambaSR.pth')
+    model_path = os.path.join('model_zoo', 'team12_DWMamba.pth')
     if os.path.exists(model_path):
         stat_dict = torch.load(model_path, map_location=device)
         weight_dict = stat_dict.get('params', stat_dict.get('params_ema', stat_dict))
@@ -72,7 +72,7 @@ def main():
     print(f"[+] Max Memory:  {max_mem:.2f} MB")
 
     with open('model_efficiency_report.txt', 'w') as f:
-        f.write("=== WaveMambaIR Efficiency Report ===\n")
+        f.write("=== DWMamba Efficiency Report ===\n")
         f.write(f"Input Shape:  {input_shape}\n")
         f.write(f"Params:       {num_parameters:.4f} M\n")
         f.write(f"FLOPs:        {flops:.4f} G\n")

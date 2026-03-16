@@ -1,3 +1,3 @@
 Model               	Val PSNR  	Val Time [ms] 	Params [M]	FLOPs [G] 	Acts [M]	Mem [M] 	Conv    
 00_SPAN             	26.94     	12.11         	0.151     	9.83      	41.68   	708.58  	  22    
-12_WaveMambaSR      	26.94     	178.96        	0.674     	19.34     	119.54  	971.90  	 143    
+12_DWMamba      	26.94     	178.96        	0.674     	19.34     	119.54  	971.90  	 143    
