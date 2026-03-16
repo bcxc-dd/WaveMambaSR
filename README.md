@@ -1,6 +1,6 @@
-# WaveMambaSR
+# DWMamba
 
-Welcome to the official repository for **WaveMambaSR**. Our codebase is specifically designed for efficient image super-resolution utilizing the Mamba architecture.
+Welcome to the official repository for **DWMamba**. Our codebase is specifically designed for efficient image super-resolution utilizing the Mamba architecture.
 
 ## Prerequisites
 
@@ -18,8 +18,8 @@ The following steps will help you set up the build environment from scratch.
 
 ### Step 1: Create and activate a virtual environment
 ```bash
-conda create -n wavemamba python=3.9 -y
-conda activate wavemamba
+conda create -n dwmamba python=3.9 -y
+conda activate dwmamba
 ```
 
 ### Step 2: Install PyTorch Core Framework
